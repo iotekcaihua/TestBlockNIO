@@ -11,8 +11,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
 
 public class TestNIO1 {
 
@@ -36,11 +35,14 @@ public class TestNIO1 {
         Selector selector = Selector.open();
         //5.将通道注册到监听器上，并注册监听事件
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+        //创建一个读队列
+        LinkedList<SelectionKey> readQueue = new LinkedList<>();
         //6.轮询式的获取选择器上已经准备就绪的事件
         while (selector.select() > 0) {
             //7.获取选择器上所有注册的监听事件
             Set<SelectionKey> selectionKeys = selector.selectedKeys();
             Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            //通道一旦连接上就有写的事件发生，一旦client端写入数据到通道内，server端就有通道的读事件发生
             while (iterator.hasNext()) {
                 //8.获取准备就绪的事件
                 SelectionKey selectionKey = iterator.next();
@@ -53,18 +55,38 @@ public class TestNIO1 {
                     //12.注册通道到selector上，事件为读
                     socketChannel.register(selector, SelectionKey.OP_READ);
                 } else if (selectionKey.isReadable()) {
+                    //首先要判断该事件是否在读的队列中，如果在的话，就不处理，让读线程处理完后会移除该key，此时该事件也就结束了
+                  /*  if (readQueue.indexOf(selectionKey) != -1) {
+                        //队列中有该事件,取消该事件
+                        iterator.remove();
+                        continue;
+                    }*/
+                    //只要client端一旦write了数据，立马开启一个线程去读数据
+                    //new Thread(() -> {
+                    //队列中不存在该事件,将该事件添加进队列
+                    readQueue.add(selectionKey);
                     //13.获取当前读准备就绪状态的通道
                     SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
                     //14.读取数据
                     ByteBuffer buffer = ByteBuffer.allocate(1024);
-                    int len=0;
-                    while((len=socketChannel.read(buffer))>0){
-                        System.out.println(len);
-                        buffer.flip();
-                        System.out.println(new String(buffer.array(),0,len));
-                        buffer.clear();
+                    int len = 0;
+                    //只有当socketChannel断开连接的时候才会read（）到-1
+                    try {
+                        //只要断开连接就返回不进行读写
+                          /*  if (socketChannel.read(buffer) == -1) {
+                                socketChannel.close();
+                                return;
+                            }*/
+                        while ((len = socketChannel.read(buffer)) > 0) {
+                            buffer.flip();
+                            System.out.println(new String(buffer.array(), 0, len));
+                            buffer.clear();
+                            readQueue.remove(selectionKey);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                    socketChannel.close();
+                    //  }).start();
                 }
                 //15.取消选择键
                 iterator.remove();
@@ -81,16 +103,34 @@ public class TestNIO1 {
         //3.创建一个缓冲区
         ByteBuffer byteBuffer = ByteBuffer.allocate(1000);
         //4.发送时间给服务器
-        byteBuffer.put(LocalDateTime.now().toString().getBytes());
-        byteBuffer.flip();
-        socketChannel.write(byteBuffer);
-        byteBuffer.clear();
-        socketChannel.close();
+        Scanner scanner = new Scanner(System.in);
+        while (scanner.hasNext()) {
+            byteBuffer.put(scanner.next().getBytes());
+            byteBuffer.flip();
+            socketChannel.write(byteBuffer);
+            byteBuffer.clear();
+            socketChannel.close();
+        }
     }
 
-    @Test
-    public void buffer() throws IOException {
-        FileChannel.open(Paths.get(""), StandardOpenOption.CREATE);
+
+    public static void main(String[] args) throws IOException {
+        //1.创建一个通道
+        SocketChannel socketChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 8859));
+        //2.切换成非阻塞模式
+        socketChannel.configureBlocking(false);
+        //3.创建一个缓冲区
+        ByteBuffer byteBuffer = ByteBuffer.allocate(1000);
+        //4.发送时间给服务器
+        Scanner scanner = new Scanner(System.in);
+        while (scanner.hasNext()) {
+            String str = scanner.next();
+            byteBuffer.put(str.getBytes());
+            byteBuffer.flip();
+            socketChannel.write(byteBuffer);
+            byteBuffer.clear();
+        }
+        socketChannel.close();
     }
 
 }
