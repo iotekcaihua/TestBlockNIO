@@ -24,7 +24,7 @@ public class TestNIO1 {
      */
 
     @Test
-    public void Server() throws IOException {
+    public void Server() throws IOException, InterruptedException {
         //1.创建一个通道
         ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
         //2.切换成非阻塞模式
@@ -38,6 +38,8 @@ public class TestNIO1 {
         //创建一个读队列
         LinkedList<SelectionKey> readQueue = new LinkedList<>();
         //6.轮询式的获取选择器上已经准备就绪的事件
+        //只有事件处于就绪状态才会生成selectionkey，同一个通道注册的selectionkey是相同的，可以复用;
+        // 当事件完成后，selectionkey状态改变，当该事件再次触发，状态再次回归到就绪
         while (selector.select() > 0) {
             //7.获取选择器上所有注册的监听事件
             Set<SelectionKey> selectionKeys = selector.selectedKeys();
@@ -56,37 +58,37 @@ public class TestNIO1 {
                     socketChannel.register(selector, SelectionKey.OP_READ);
                 } else if (selectionKey.isReadable()) {
                     //首先要判断该事件是否在读的队列中，如果在的话，就不处理，让读线程处理完后会移除该key，此时该事件也就结束了
-                  /*  if (readQueue.indexOf(selectionKey) != -1) {
+                    if (readQueue.indexOf(selectionKey) != -1) {
                         //队列中有该事件,取消该事件
                         iterator.remove();
                         continue;
-                    }*/
-                    //只要client端一旦write了数据，立马开启一个线程去读数据
-                    //new Thread(() -> {
+                    }
                     //队列中不存在该事件,将该事件添加进队列
                     readQueue.add(selectionKey);
-                    //13.获取当前读准备就绪状态的通道
-                    SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
-                    //14.读取数据
-                    ByteBuffer buffer = ByteBuffer.allocate(1024);
-                    int len = 0;
-                    //只有当socketChannel断开连接的时候才会read（）到-1
-                    try {
-                        //只要断开连接就返回不进行读写
+                    //只要client端一旦write了数据，立马开启一个线程去读数据
+                    new Thread(() -> {
+                        //13.获取当前读准备就绪状态的通道
+                        SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                        //14.读取数据
+                        ByteBuffer buffer = ByteBuffer.allocate(1024);
+                        int len = 0;
+                        //只有当socketChannel断开连接的时候才会read（）到-1
+                        try {
+                            //只要断开连接就返回不进行读写
                           /*  if (socketChannel.read(buffer) == -1) {
                                 socketChannel.close();
                                 return;
                             }*/
-                        while ((len = socketChannel.read(buffer)) > 0) {
-                            buffer.flip();
-                            System.out.println(new String(buffer.array(), 0, len));
-                            buffer.clear();
-                            readQueue.remove(selectionKey);
+                            while ((len = socketChannel.read(buffer)) > 0) {
+                                buffer.flip();
+                                System.out.println(new String(buffer.array(), 0, len));
+                                buffer.clear();
+                                readQueue.remove(selectionKey);
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
                         }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                    //  }).start();
+                    }).start();
                 }
                 //15.取消选择键
                 iterator.remove();
@@ -131,6 +133,27 @@ public class TestNIO1 {
             byteBuffer.clear();
         }
         socketChannel.close();
+    }
+
+
+    @Test
+    public void s() throws InterruptedException {
+        ArrayList<String> list = new ArrayList<>();
+        list.add("A");
+        list.add("V");
+        list.add("C");
+        Iterator<String> iterator = list.iterator();
+        new Thread(() -> {
+            list.add("B");
+            System.out.println(list);
+        }).start();
+        while (iterator.hasNext()) {
+            Thread.sleep(1000);
+            if ("V".equals(iterator.next())) {
+                iterator.remove();
+            }
+        }
+        System.out.println(list);
     }
 
 }
